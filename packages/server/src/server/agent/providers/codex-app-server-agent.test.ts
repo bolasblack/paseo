@@ -198,7 +198,7 @@ function capturedThreadStartConfig(records: CapturedFakeCodexRecord[]): unknown 
 }
 
 describe("Codex app-server provider", () => {
-  test("exposes and applies auto review approval policy", async () => {
+  test("exposes and applies auto review approval policy that matches Codex auto mode", async () => {
     const session = createSession({ modeId: "auto-review", thinkingOptionId: "medium" });
     const requests: Array<{ method: string; params: unknown }> = [];
     const fakeClient: CodexClientLike = {
@@ -232,11 +232,11 @@ describe("Codex app-server provider", () => {
     const threadStartCall = requests.find((req) => req.method === "thread/start");
     const turnStartCall = requests.find((req) => req.method === "turn/start");
     expect(threadStartCall?.params).toMatchObject({
-      approvalPolicy: "untrusted",
+      approvalPolicy: "on-request",
       sandbox: "workspace-write",
     });
     expect(turnStartCall?.params).toMatchObject({
-      approvalPolicy: "untrusted",
+      approvalPolicy: "on-request",
       sandboxPolicy: { type: "workspaceWrite", networkAccess: false },
     });
   });

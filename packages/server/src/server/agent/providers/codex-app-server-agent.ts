@@ -209,7 +209,7 @@ const MODE_PRESETS: Record<
     sandbox: "workspace-write",
   },
   "auto-review": {
-    approvalPolicy: "untrusted",
+    approvalPolicy: "on-request",
     sandbox: "workspace-write",
   },
   "full-access": {
