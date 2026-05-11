@@ -27,6 +27,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   ShieldOff,
+  ShieldQuestionMark,
   Zap,
 } from "lucide-react-native";
 import { getProviderIcon } from "@/components/provider-icons";
@@ -100,6 +101,7 @@ interface ControlledAgentStatusBarProps {
   onSetFeature?: (featureId: string, value: unknown) => void;
   onDropdownClose?: () => void;
   onModelSelectorOpen?: () => void;
+  onModeSelectorOpen?: () => void;
 }
 
 export interface DraftAgentStatusBarProps {
@@ -123,6 +125,7 @@ export interface DraftAgentStatusBarProps {
   onSetFeature?: (featureId: string, value: unknown) => void;
   onDropdownClose?: () => void;
   onModelSelectorOpen?: () => void;
+  onModeSelectorOpen?: () => void;
   disabled?: boolean;
 }
 
@@ -180,6 +183,7 @@ const MODE_ICONS = {
   ShieldCheck,
   ShieldAlert,
   ShieldOff,
+  ShieldQuestionMark,
 } as const;
 
 function alwaysTrue() {
@@ -488,6 +492,7 @@ function ControlledStatusBar({
   onSetFeature,
   onDropdownClose,
   onModelSelectorOpen,
+  onModeSelectorOpen,
 }: ControlledAgentStatusBarProps) {
   const { theme } = useUnistyles();
   const [prefsOpen, setPrefsOpen] = useState(false);
@@ -583,13 +588,22 @@ function ControlledStatusBar({
     handleOpenChange("thinking")(openSelector !== "thinking");
   }, [handleOpenChange, openSelector]);
 
-  const handleModePress = useCallback(() => {
-    handleOpenChange("mode")(openSelector !== "mode");
-  }, [handleOpenChange, openSelector]);
-
   const handleProviderOpenChange = useMemo(() => handleOpenChange("provider"), [handleOpenChange]);
   const handleThinkingOpenChange = useMemo(() => handleOpenChange("thinking"), [handleOpenChange]);
-  const handleModeOpenChange = useMemo(() => handleOpenChange("mode"), [handleOpenChange]);
+  const handleModeBaseOpenChange = useMemo(() => handleOpenChange("mode"), [handleOpenChange]);
+  const handleModeOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      if (nextOpen) {
+        onModeSelectorOpen?.();
+      }
+      handleModeBaseOpenChange(nextOpen);
+    },
+    [handleModeBaseOpenChange, onModeSelectorOpen],
+  );
+
+  const handleModePress = useCallback(() => {
+    handleModeOpenChange(openSelector !== "mode");
+  }, [handleModeOpenChange, openSelector]);
 
   const handleProviderSelect = useCallback(
     (id: string) => onSelectProvider?.(id),
@@ -1843,6 +1857,7 @@ export const AgentStatusBar = memo(function AgentStatusBar({
       onSetFeature={handleSetFeature}
       isModelLoading={snapshotIsLoading || selectedProviderIsLoading}
       onModelSelectorOpen={handleModelSelectorOpen}
+      onModeSelectorOpen={handleModelSelectorOpen}
       onDropdownClose={onDropdownClose}
       disabled={!client}
     />
@@ -1870,6 +1885,7 @@ export function DraftAgentStatusBar({
   onSetFeature,
   onDropdownClose,
   onModelSelectorOpen,
+  onModeSelectorOpen,
   disabled = false,
 }: DraftAgentStatusBarProps) {
   const { preferences, updatePreferences } = useFormPreferences();
@@ -1949,6 +1965,7 @@ export function DraftAgentStatusBar({
             features={features}
             onSetFeature={onSetFeature}
             onDropdownClose={onDropdownClose}
+            onModeSelectorOpen={onModeSelectorOpen}
             disabled={disabled}
           />
         ) : null}
@@ -1977,6 +1994,7 @@ export function DraftAgentStatusBar({
       features={features}
       onSetFeature={onSetFeature}
       onModelSelectorOpen={onModelSelectorOpen}
+      onModeSelectorOpen={onModeSelectorOpen}
       disabled={disabled}
     />
   );
