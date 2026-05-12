@@ -218,7 +218,7 @@ function SheetStatusMessages({
       {showEmptyState ? (
         <Text style={styles.statusText}>
           {allAlreadyImported
-            ? "All recent sessions are already imported."
+            ? "All recent sessions are already in Paseo."
             : "No recent sessions to import."}
         </Text>
       ) : null}

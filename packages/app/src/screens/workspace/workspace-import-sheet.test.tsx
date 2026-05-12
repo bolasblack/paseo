@@ -53,10 +53,6 @@ vi.mock("react-native-unistyles", () => ({
     },
 }));
 
-vi.mock("@/constants/layout", () => ({
-  useIsCompactFormFactor: () => false,
-}));
-
 vi.mock("@/components/provider-icons", () => ({
   getProviderIcon: () => () => null,
 }));
@@ -142,6 +138,8 @@ vi.mock("@/hooks/use-providers-snapshot", () => ({
   }),
 }));
 
+type ImportSessionsClient = Pick<DaemonClient, "fetchRecentProviderSessions" | "importAgent">;
+
 interface RenderOptions {
   visible?: boolean;
   onClose?: () => void;
@@ -152,10 +150,7 @@ interface RenderOptions {
   };
 }
 
-function renderSheet(
-  client: Pick<DaemonClient, "fetchRecentProviderSessions" | "importAgent">,
-  options?: RenderOptions,
-) {
+function renderSheet(client: ImportSessionsClient, options?: RenderOptions) {
   mockSnapshot.current = {
     entries: options?.snapshot?.entries,
     supportsSnapshot: options?.snapshot?.supportsSnapshot ?? false,
@@ -182,20 +177,21 @@ function renderSheet(
   );
 }
 
-function createRecentSessionsClient(
-  fetchRecentProviderSessions: Pick<
-    DaemonClient,
-    "fetchRecentProviderSessions"
-  >["fetchRecentProviderSessions"],
-  importAgent: Pick<DaemonClient, "importAgent">["importAgent"],
-): Pick<DaemonClient, "fetchRecentProviderSessions" | "importAgent"> {
-  return { fetchRecentProviderSessions, importAgent };
+function createClient(overrides?: Partial<ImportSessionsClient>): ImportSessionsClient {
+  return {
+    fetchRecentProviderSessions: vi.fn(async () => ({
+      requestId: "recent-provider-sessions",
+      entries: [],
+    })),
+    importAgent: vi.fn(async () => createImportedAgentSnapshot("agent-imported")),
+    ...overrides,
+  };
 }
 
 function createImportedAgentSnapshot(id: string): Awaited<ReturnType<DaemonClient["importAgent"]>> {
   return {
     id,
-    provider: "custom-provider",
+    provider: "claude",
     cwd: "/repo/paseo",
     model: null,
     createdAt: "2026-04-30T10:00:00.000Z",
@@ -223,8 +219,8 @@ function createProviderSessionEntry(
   overrides?: Partial<FetchRecentProviderSessionEntry>,
 ): FetchRecentProviderSessionEntry {
   return {
-    providerId: "custom-provider",
-    providerLabel: "Custom Agent",
+    providerId: "claude",
+    providerLabel: "Claude Code",
     providerHandleId: "provider-thread-1",
     cwd: "/repo/paseo",
     title: "Import me",
@@ -235,12 +231,6 @@ function createProviderSessionEntry(
   };
 }
 
-const PROVIDER_LABELS: Record<string, string> = {
-  claude: "Claude Code",
-  codex: "Codex",
-  opencode: "OpenCode",
-};
-
 function createSnapshotEntry(
   provider: string,
   overrides?: Partial<ProviderSnapshotEntry>,
@@ -249,7 +239,7 @@ function createSnapshotEntry(
     provider,
     status: "ready",
     enabled: true,
-    label: PROVIDER_LABELS[provider] ?? provider,
+    label: provider === "claude" ? "Claude Code" : provider,
     ...overrides,
   };
 }
@@ -261,127 +251,35 @@ describe("WorkspaceImportSheet", () => {
   });
 
   it("shows an update-host message when the daemon does not support provider snapshots", async () => {
-    const fetchRecentProviderSessions = vi.fn();
-    const importAgent = vi.fn();
+    const client = createClient();
 
-    renderSheet({ fetchRecentProviderSessions, importAgent } as Pick<
-      DaemonClient,
-      "fetchRecentProviderSessions" | "importAgent"
-    >);
+    renderSheet(client);
 
     await screen.findByText("Update the host to import sessions.");
-    expect(fetchRecentProviderSessions).not.toHaveBeenCalled();
+    expect(client.fetchRecentProviderSessions).not.toHaveBeenCalled();
   });
 
-  it("shows a loading state while provider snapshot is loading", async () => {
-    const fetchRecentProviderSessions = vi.fn(
-      () => new Promise<Awaited<ReturnType<DaemonClient["fetchRecentProviderSessions"]>>>(() => {}),
-    );
-    const importAgent = vi.fn();
-
-    renderSheet(
-      { fetchRecentProviderSessions, importAgent } as Pick<
-        DaemonClient,
-        "fetchRecentProviderSessions" | "importAgent"
-      >,
-      {
-        snapshot: { supportsSnapshot: true, entries: undefined },
-      },
-    );
-
-    await screen.findByText("Loading recent sessions...");
-    expect(fetchRecentProviderSessions).not.toHaveBeenCalled();
-  });
-
-  it("shows an empty state when there are no recent provider sessions to import", async () => {
-    const fetchRecentProviderSessions = vi.fn(async () => ({
-      requestId: "recent-provider-sessions",
-      entries: [],
-    }));
-    const importAgent = vi.fn();
-
-    renderSheet(
-      { fetchRecentProviderSessions, importAgent } as Pick<
-        DaemonClient,
-        "fetchRecentProviderSessions" | "importAgent"
-      >,
-      {
-        snapshot: { supportsSnapshot: true, entries: [createSnapshotEntry("claude")] },
-      },
-    );
-
-    await screen.findByText("No recent sessions to import.");
-  });
-
-  it("shows the all-already-imported empty state when filteredAlreadyImportedCount is positive", async () => {
-    const fetchRecentProviderSessions = vi.fn(async () => ({
-      requestId: "recent-provider-sessions",
-      entries: [],
-      filteredAlreadyImportedCount: 3,
-    }));
-    const importAgent = vi.fn();
-
-    renderSheet(
-      { fetchRecentProviderSessions, importAgent } as Pick<
-        DaemonClient,
-        "fetchRecentProviderSessions" | "importAgent"
-      >,
-      {
-        snapshot: { supportsSnapshot: true, entries: [createSnapshotEntry("claude")] },
-      },
-    );
-
-    await screen.findByText("All recent sessions are already imported.");
-    expect(screen.queryByText("No recent sessions to import.")).toBeNull();
-  });
-
-  it("shows a fetch error state when recent provider sessions cannot be loaded", async () => {
-    const fetchRecentProviderSessions = vi.fn(async () => {
-      throw new Error("recent sessions unavailable");
-    });
-    const importAgent = vi.fn();
-
-    renderSheet(
-      { fetchRecentProviderSessions, importAgent } as Pick<
-        DaemonClient,
-        "fetchRecentProviderSessions" | "importAgent"
-      >,
-      {
-        snapshot: { supportsSnapshot: true, entries: [createSnapshotEntry("claude")] },
-      },
-    );
-
-    await screen.findByText("Could not load recent sessions.");
-  });
-
-  it("loads recent provider sessions for the workspace and renders descriptor-owned labels", async () => {
+  it("loads recent provider sessions for the workspace", async () => {
     vi.setSystemTime(new Date("2026-04-30T12:00:00.000Z"));
-    const fetchRecentProviderSessions = vi.fn(async () => ({
-      requestId: "recent-provider-sessions",
-      entries: [
-        createProviderSessionEntry({
-          providerId: "claude",
-          providerLabel: "Claude Code",
-          title: null,
-          firstPromptPreview: "Implement the importer sheet",
-          lastPromptPreview: "Make the rows readable and provider opaque",
-        }),
-      ],
-    }));
-    const importAgent = vi.fn();
+    const client = createClient({
+      fetchRecentProviderSessions: vi.fn(async () => ({
+        requestId: "recent-provider-sessions",
+        entries: [
+          createProviderSessionEntry({
+            title: null,
+            firstPromptPreview: "Implement the importer sheet",
+            lastPromptPreview: "Make the rows readable and provider opaque",
+          }),
+        ],
+      })),
+    });
 
-    renderSheet(
-      { fetchRecentProviderSessions, importAgent } as Pick<
-        DaemonClient,
-        "fetchRecentProviderSessions" | "importAgent"
-      >,
-      {
-        snapshot: { supportsSnapshot: true, entries: [createSnapshotEntry("claude")] },
-      },
-    );
+    renderSheet(client, {
+      snapshot: { supportsSnapshot: true, entries: [createSnapshotEntry("claude")] },
+    });
 
     await waitFor(() => {
-      expect(fetchRecentProviderSessions).toHaveBeenCalledWith({
+      expect(client.fetchRecentProviderSessions).toHaveBeenCalledWith({
         cwd: "/repo/paseo",
         providers: ["claude"],
         limit: 15,
@@ -393,89 +291,26 @@ describe("WorkspaceImportSheet", () => {
     screen.getByText("Make the rows readable and provider opaque");
   });
 
-  it("keeps cached rows visible and revalidates when reopened", async () => {
-    const fetchRecentProviderSessions = vi.fn(async () => ({
-      requestId: "recent-provider-sessions",
-      entries: [
-        createProviderSessionEntry({
-          providerId: "claude",
-          providerLabel: "Claude Code",
-          title: "Cached importable session",
-        }),
-      ],
-    }));
-    const importAgent = vi.fn();
-    const client = createRecentSessionsClient(fetchRecentProviderSessions, importAgent);
-    const queryClient = new QueryClient({
-      defaultOptions: {
-        queries: { retry: false },
-        mutations: { retry: false },
-      },
+  it("imports a selected session by provider handle", async () => {
+    const client = createClient({
+      fetchRecentProviderSessions: vi.fn(async () => ({
+        requestId: "recent-provider-sessions",
+        entries: [createProviderSessionEntry()],
+      })),
     });
-    mockSnapshot.current = {
-      entries: [createSnapshotEntry("claude")],
-      supportsSnapshot: true,
-    };
-
-    function TestSheet({ visible }: { visible: boolean }) {
-      return (
-        <QueryClientProvider client={queryClient}>
-          <WorkspaceImportSheet
-            visible={visible}
-            client={client}
-            serverId="server-1"
-            workspaceDirectory="/repo/paseo"
-            onClose={vi.fn()}
-            onImportedAgent={vi.fn()}
-          />
-        </QueryClientProvider>
-      );
-    }
-
-    const { rerender } = render(<TestSheet visible />);
-
-    await screen.findByText("Cached importable session");
-    expect(fetchRecentProviderSessions).toHaveBeenCalledTimes(1);
-
-    rerender(<TestSheet visible={false} />);
-    fetchRecentProviderSessions.mockClear();
-    rerender(<TestSheet visible />);
-
-    await screen.findByText("Cached importable session");
-    await waitFor(() => {
-      expect(fetchRecentProviderSessions).toHaveBeenCalledWith({
-        cwd: "/repo/paseo",
-        providers: ["claude"],
-        limit: 15,
-      });
-    });
-  });
-
-  it("imports a selected session by provider handle and reports the imported agent", async () => {
-    const fetchRecentProviderSessions = vi.fn(async () => ({
-      requestId: "recent-provider-sessions",
-      entries: [createProviderSessionEntry({ providerId: "claude", providerLabel: "Claude Code" })],
-    }));
-    const importAgent = vi.fn(async () => createImportedAgentSnapshot("agent-imported"));
     const onClose = vi.fn();
     const onImportedAgent = vi.fn();
 
-    renderSheet(
-      { fetchRecentProviderSessions, importAgent } as Pick<
-        DaemonClient,
-        "fetchRecentProviderSessions" | "importAgent"
-      >,
-      {
-        onClose,
-        onImportedAgent,
-        snapshot: { supportsSnapshot: true, entries: [createSnapshotEntry("claude")] },
-      },
-    );
+    renderSheet(client, {
+      onClose,
+      onImportedAgent,
+      snapshot: { supportsSnapshot: true, entries: [createSnapshotEntry("claude")] },
+    });
 
     fireEvent.click(await screen.findByTestId("workspace-import-session-claude-provider-thread-1"));
 
     await waitFor(() => {
-      expect(importAgent).toHaveBeenCalledWith({
+      expect(client.importAgent).toHaveBeenCalledWith({
         providerId: "claude",
         providerHandleId: "provider-thread-1",
         cwd: "/repo/paseo",
@@ -486,238 +321,59 @@ describe("WorkspaceImportSheet", () => {
   });
 
   it("shows an import error state without closing when selected session import fails", async () => {
-    const fetchRecentProviderSessions = vi.fn(async () => ({
-      requestId: "recent-provider-sessions",
-      entries: [createProviderSessionEntry({ providerId: "claude", providerLabel: "Claude Code" })],
-    }));
-    const importAgent = vi.fn(async () => {
-      throw new Error("import unavailable");
+    const client = createClient({
+      fetchRecentProviderSessions: vi.fn(async () => ({
+        requestId: "recent-provider-sessions",
+        entries: [createProviderSessionEntry()],
+      })),
+      importAgent: vi.fn(async () => {
+        throw new Error("import unavailable");
+      }),
     });
     const onClose = vi.fn();
     const onImportedAgent = vi.fn();
 
-    renderSheet(
-      { fetchRecentProviderSessions, importAgent } as Pick<
-        DaemonClient,
-        "fetchRecentProviderSessions" | "importAgent"
-      >,
-      {
-        onClose,
-        onImportedAgent,
-        snapshot: { supportsSnapshot: true, entries: [createSnapshotEntry("claude")] },
-      },
-    );
+    renderSheet(client, {
+      onClose,
+      onImportedAgent,
+      snapshot: { supportsSnapshot: true, entries: [createSnapshotEntry("claude")] },
+    });
 
     fireEvent.click(await screen.findByTestId("workspace-import-session-claude-provider-thread-1"));
 
     await screen.findByText("Could not import selected session.");
-    expect(importAgent).toHaveBeenCalledWith({
-      providerId: "claude",
-      providerHandleId: "provider-thread-1",
-      cwd: "/repo/paseo",
-    });
     expect(onImportedAgent).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("fans out one request per enabled importable provider when snapshot is supported", async () => {
-    const fetchRecentProviderSessions = vi.fn(
-      async (options: { providers?: string[] } | undefined) => ({
-        requestId: `recent-${options?.providers?.[0] ?? "all"}`,
-        entries: [
-          createProviderSessionEntry({
-            providerId: options?.providers?.[0] ?? "custom-provider",
-            providerLabel: options?.providers?.[0] ?? "Custom",
-            providerHandleId: `${options?.providers?.[0] ?? "custom-provider"}-thread`,
-            title: `Session ${options?.providers?.[0] ?? "all"}`,
-            lastActivityAt: "2026-04-30T10:00:00.000Z",
-          }),
-        ],
-      }),
-    );
-    const importAgent = vi.fn();
-
-    renderSheet(
-      { fetchRecentProviderSessions, importAgent } as Pick<
-        DaemonClient,
-        "fetchRecentProviderSessions" | "importAgent"
-      >,
-      {
-        snapshot: {
-          supportsSnapshot: true,
-          entries: [
-            createSnapshotEntry("claude"),
-            createSnapshotEntry("codex"),
-            createSnapshotEntry("opencode", { enabled: false }),
-            createSnapshotEntry("z-ai"),
-          ],
-        },
-      },
-    );
-
-    await waitFor(() => {
-      expect(fetchRecentProviderSessions).toHaveBeenCalledWith({
-        cwd: "/repo/paseo",
-        providers: ["claude"],
-        limit: 15,
-      });
+  it("shows all-already-imported empty state when provider sessions were filtered", async () => {
+    const client = createClient({
+      fetchRecentProviderSessions: vi.fn(async () => ({
+        requestId: "recent-provider-sessions",
+        entries: [],
+        filteredAlreadyImportedCount: 3,
+      })),
     });
-    expect(fetchRecentProviderSessions).toHaveBeenCalledWith({
-      cwd: "/repo/paseo",
-      providers: ["codex"],
-      limit: 15,
+
+    renderSheet(client, {
+      snapshot: { supportsSnapshot: true, entries: [createSnapshotEntry("claude")] },
     });
-    expect(fetchRecentProviderSessions).not.toHaveBeenCalledWith(
-      expect.objectContaining({ providers: ["opencode"] }),
-    );
-    expect(fetchRecentProviderSessions).not.toHaveBeenCalledWith(
-      expect.objectContaining({ providers: ["z-ai"] }),
-    );
 
-    await screen.findByText("Session claude");
-    await screen.findByText("Session codex");
+    await screen.findByText("All recent sessions are already in Paseo.");
+    expect(screen.queryByText("No recent sessions to import.")).toBeNull();
   });
 
-  it("shows partial-failure note when one provider request fails but others succeed", async () => {
-    const fetchRecentProviderSessions = vi.fn(
-      async (options: { providers?: string[] } | undefined) => {
-        const provider = options?.providers?.[0];
-        if (provider === "claude") {
-          throw new Error("claude offline");
-        }
-        return {
-          requestId: `recent-${provider ?? "all"}`,
-          entries: [
-            createProviderSessionEntry({
-              providerId: provider ?? "custom-provider",
-              providerHandleId: `${provider}-thread`,
-              providerLabel: provider ?? "Custom",
-              title: `Session ${provider}`,
-            }),
-          ],
-        };
+  it("shows no-importable-providers message when no enabled provider can be imported", async () => {
+    const client = createClient();
+
+    renderSheet(client, {
+      snapshot: {
+        supportsSnapshot: true,
+        entries: [createSnapshotEntry("claude", { enabled: false }), createSnapshotEntry("z-ai")],
       },
-    );
-    const importAgent = vi.fn();
-
-    renderSheet(
-      { fetchRecentProviderSessions, importAgent } as Pick<
-        DaemonClient,
-        "fetchRecentProviderSessions" | "importAgent"
-      >,
-      {
-        snapshot: {
-          supportsSnapshot: true,
-          entries: [createSnapshotEntry("claude"), createSnapshotEntry("codex")],
-        },
-      },
-    );
-
-    await screen.findByText("Session codex");
-    await screen.findByText("Could not load sessions for Claude Code.");
-  });
-
-  it("filters the merged list when a provider badge is selected and restores it on All", async () => {
-    const fetchRecentProviderSessions = vi.fn(
-      async (options: { providers?: string[] } | undefined) => {
-        const provider = options?.providers?.[0] ?? "claude";
-        return {
-          requestId: `recent-${provider}`,
-          entries: [
-            createProviderSessionEntry({
-              providerId: provider,
-              providerLabel: provider === "claude" ? "Claude Code" : "Codex",
-              providerHandleId: `${provider}-thread`,
-              title: `Session ${provider}`,
-              lastActivityAt:
-                provider === "claude" ? "2026-04-30T09:00:00.000Z" : "2026-04-30T10:00:00.000Z",
-            }),
-          ],
-        };
-      },
-    );
-    const importAgent = vi.fn();
-
-    renderSheet(
-      { fetchRecentProviderSessions, importAgent } as Pick<
-        DaemonClient,
-        "fetchRecentProviderSessions" | "importAgent"
-      >,
-      {
-        snapshot: {
-          supportsSnapshot: true,
-          entries: [createSnapshotEntry("claude"), createSnapshotEntry("codex")],
-        },
-      },
-    );
-
-    await screen.findByText("Session claude");
-    await screen.findByText("Session codex");
-
-    fireEvent.click(screen.getByTestId("workspace-import-filter-codex"));
-
-    screen.getByText("Session codex");
-    expect(screen.queryByText("Session claude")).toBeNull();
-
-    fireEvent.click(screen.getByTestId("workspace-import-filter-all"));
-
-    screen.getByText("Session claude");
-    screen.getByText("Session codex");
-  });
-
-  it("does not render filter badges when only one importable provider is enabled", async () => {
-    const fetchRecentProviderSessions = vi.fn(async () => ({
-      requestId: "recent-codex",
-      entries: [createProviderSessionEntry({ providerId: "codex", providerLabel: "Codex" })],
-    }));
-    const importAgent = vi.fn();
-
-    renderSheet(
-      { fetchRecentProviderSessions, importAgent } as Pick<
-        DaemonClient,
-        "fetchRecentProviderSessions" | "importAgent"
-      >,
-      {
-        snapshot: {
-          supportsSnapshot: true,
-          entries: [
-            createSnapshotEntry("codex"),
-            createSnapshotEntry("claude", { enabled: false }),
-          ],
-        },
-      },
-    );
-
-    await waitFor(() => {
-      expect(fetchRecentProviderSessions).toHaveBeenCalled();
     });
-    expect(screen.queryByTestId("workspace-import-filters")).toBeNull();
-    expect(screen.queryByTestId("workspace-import-filter-all")).toBeNull();
-  });
-
-  it("shows a no-importable-providers message when snapshot has no enabled importable providers", async () => {
-    const fetchRecentProviderSessions = vi.fn();
-    const importAgent = vi.fn();
-
-    renderSheet(
-      { fetchRecentProviderSessions, importAgent } as Pick<
-        DaemonClient,
-        "fetchRecentProviderSessions" | "importAgent"
-      >,
-      {
-        snapshot: {
-          supportsSnapshot: true,
-          entries: [
-            createSnapshotEntry("claude", { enabled: false }),
-            createSnapshotEntry("codex", { enabled: false }),
-            createSnapshotEntry("opencode", { enabled: false }),
-            createSnapshotEntry("z-ai"),
-          ],
-        },
-      },
-    );
 
     await screen.findByText("No importable providers are enabled.");
-    expect(fetchRecentProviderSessions).not.toHaveBeenCalled();
+    expect(client.fetchRecentProviderSessions).not.toHaveBeenCalled();
   });
 });

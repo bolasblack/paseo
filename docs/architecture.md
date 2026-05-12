@@ -86,7 +86,7 @@ Cross-platform React Native app that connects to one or more daemons.
 
 Commander.js CLI with Docker-style commands. Common agent operations are also exposed at the top level (e.g. `paseo ls`, `paseo run`).
 
-- `paseo agent ls/run/import/attach/logs/stop/delete/send/inspect/wait/archive/reload/update/mode`
+- `paseo agent ls/run/import/resume/attach/logs/stop/delete/send/inspect/wait/archive/reload/update/mode`
 - `paseo daemon start/stop/restart/status/pair/set-password`
 - `paseo chat ls/create/inspect/post/read/wait/delete`
 - `paseo terminal ls/create/capture/send-keys/kill`

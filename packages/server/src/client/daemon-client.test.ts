@@ -2028,6 +2028,128 @@ test("imports an agent by provider handle id", async () => {
   });
 });
 
+test("resumes an agent session by agent id", async () => {
+  const logger = createMockLogger();
+  const mock = createMockTransport();
+
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "clsk_unit_test",
+    logger,
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  const promise = client.resumeAgentSession("agent-1");
+
+  expect(mock.sent).toHaveLength(1);
+  const request = JSON.parse(String(mock.sent[0])) as {
+    type: "session";
+    message: {
+      type: "resume_agent_session_request";
+      requestId: string;
+      agentId: string;
+    };
+  };
+  expect(request.message).toMatchObject({
+    type: "resume_agent_session_request",
+    agentId: "agent-1",
+  });
+
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "status",
+      payload: {
+        status: "agent_resumed",
+        requestId: request.message.requestId,
+        agentId: "agent-1",
+        timelineSize: 0,
+        agent: {
+          id: "agent-1",
+          provider: "custom-codex",
+          cwd: "/tmp/repo",
+          model: null,
+          features: [],
+          thinkingOptionId: null,
+          effectiveThinkingOptionId: null,
+          createdAt: "2026-04-30T00:00:00.000Z",
+          updatedAt: "2026-04-30T00:00:00.000Z",
+          lastUserMessageAt: null,
+          status: "idle",
+          capabilities: {
+            supportsStreaming: false,
+            supportsSessionPersistence: false,
+            supportsDynamicModes: false,
+            supportsMcpServers: false,
+            supportsReasoningStream: false,
+            supportsToolInvocations: false,
+          },
+          currentModeId: null,
+          availableModes: [],
+          pendingPermissions: [],
+          persistence: {
+            provider: "custom-codex",
+            sessionId: "thread-1",
+            nativeHandle: "thread-1",
+          },
+          title: null,
+          labels: {},
+          requiresAttention: false,
+          attentionReason: null,
+        },
+      },
+    }),
+  );
+
+  await expect(promise).resolves.toMatchObject({
+    id: "agent-1",
+    provider: "custom-codex",
+  });
+});
+
+test("rejects when session resume fails", async () => {
+  const logger = createMockLogger();
+  const mock = createMockTransport();
+
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "clsk_unit_test",
+    logger,
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  const promise = client.resumeAgentSession("agent-1");
+  const request = JSON.parse(String(mock.sent[0])) as {
+    type: "session";
+    message: { requestId: string };
+  };
+
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "status",
+      payload: {
+        status: "agent_resume_failed",
+        requestId: request.message.requestId,
+        agentId: "agent-1",
+        error: "missing persistence",
+      },
+    }),
+  );
+
+  await expect(promise).rejects.toThrow("missing persistence");
+});
+
 test("uses server-provided dictation finish timeout budget", async () => {
   vi.useFakeTimers();
   const logger = createMockLogger();

@@ -11,6 +11,7 @@ import { addInspectOptions, runInspectCommand } from "./inspect.js";
 import { addWaitOptions, runWaitCommand } from "./wait.js";
 import { addAttachOptions, runAttachCommand } from "./attach.js";
 import { addReloadOptions, runReloadCommand } from "./reload.js";
+import { addResumeOptions, runResumeCommand } from "./resume.js";
 import { addImportOptions, runImportCommand } from "./import.js";
 import { runUpdateCommand } from "./update.js";
 import { withOutput } from "../../output/index.js";
@@ -32,6 +33,10 @@ export function createAgentCommand(): Command {
 
   addJsonAndDaemonHostOptions(addImportOptions(agent.command("import"))).action(
     withOutput(runImportCommand),
+  );
+
+  addJsonAndDaemonHostOptions(addResumeOptions(agent.command("resume"))).action(
+    withOutput(runResumeCommand),
   );
 
   addDaemonHostOption(addAttachOptions(agent.command("attach"))).action(runAttachCommand);

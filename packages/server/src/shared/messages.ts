@@ -1090,6 +1090,12 @@ export const ResumeAgentRequestMessageSchema = z.object({
   requestId: z.string(),
 });
 
+export const ResumeAgentSessionRequestMessageSchema = z.object({
+  type: z.literal("resume_agent_session_request"),
+  agentId: z.string(),
+  requestId: z.string(),
+});
+
 export const ImportAgentRequestMessageSchema = z.object({
   type: z.literal("import_agent_request"),
   provider: AgentProviderSchema.optional(),
@@ -1741,6 +1747,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   RefreshProvidersSnapshotRequestMessageSchema,
   ProviderDiagnosticRequestMessageSchema,
   ResumeAgentRequestMessageSchema,
+  ResumeAgentSessionRequestMessageSchema,
   ImportAgentRequestMessageSchema,
   RefreshAgentRequestMessageSchema,
   CancelAgentRequestMessageSchema,
@@ -2053,6 +2060,13 @@ export const AgentResumedStatusPayloadSchema = z
   })
   .extend(AgentStatusWithTimelineSchema.shape);
 
+export const AgentResumeFailedStatusPayloadSchema = z.object({
+  status: z.literal("agent_resume_failed"),
+  requestId: z.string(),
+  agentId: z.string().optional(),
+  error: z.string(),
+});
+
 export const AgentRefreshedStatusPayloadSchema = z
   .object({
     status: z.literal("agent_refreshed"),
@@ -2083,6 +2097,7 @@ export const KnownStatusPayloadSchema = z.discriminatedUnion("status", [
   AgentCreatedStatusPayloadSchema,
   AgentCreateFailedStatusPayloadSchema,
   AgentResumedStatusPayloadSchema,
+  AgentResumeFailedStatusPayloadSchema,
   AgentRefreshedStatusPayloadSchema,
   ShutdownRequestedStatusPayloadSchema,
   RestartRequestedStatusPayloadSchema,
@@ -3634,6 +3649,9 @@ export type LoopInspectRequest = z.infer<typeof LoopInspectRequestSchema>;
 export type LoopLogsRequest = z.infer<typeof LoopLogsRequestSchema>;
 export type LoopStopRequest = z.infer<typeof LoopStopRequestSchema>;
 export type ResumeAgentRequestMessage = z.infer<typeof ResumeAgentRequestMessageSchema>;
+export type ResumeAgentSessionRequestMessage = z.infer<
+  typeof ResumeAgentSessionRequestMessageSchema
+>;
 export type DeleteAgentRequestMessage = z.infer<typeof DeleteAgentRequestMessageSchema>;
 export type UpdateAgentRequestMessage = z.infer<typeof UpdateAgentRequestMessageSchema>;
 export type SetAgentModeRequestMessage = z.infer<typeof SetAgentModeRequestMessageSchema>;

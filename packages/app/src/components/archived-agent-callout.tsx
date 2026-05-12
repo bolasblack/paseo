@@ -5,6 +5,7 @@ import Animated from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FOOTER_HEIGHT, MAX_CONTENT_WIDTH } from "@/constants/layout";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
+import { useAgentInitialization } from "@/hooks/use-agent-initialization";
 import { useKeyboardShiftStyle } from "@/hooks/use-keyboard-shift-style";
 import { Button } from "@/components/ui/button";
 import type { Theme } from "@/styles/theme";
@@ -18,7 +19,8 @@ export function ArchivedAgentCallout({ serverId, agentId }: ArchivedAgentCallout
   const insets = useSafeAreaInsets();
   const client = useHostRuntimeClient(serverId);
   const isConnected = useHostRuntimeIsConnected(serverId);
-  const [isUnarchiving, setIsUnarchiving] = useState(false);
+  const [isResuming, setIsResuming] = useState(false);
+  const { resumeAgentSession } = useAgentInitialization({ serverId, client });
 
   const { style: keyboardAnimatedStyle } = useKeyboardShiftStyle({ mode: "translate" });
 
@@ -27,30 +29,30 @@ export function ArchivedAgentCallout({ serverId, agentId }: ArchivedAgentCallout
     [insets.bottom, keyboardAnimatedStyle],
   );
 
-  const handleUnarchive = useCallback(async () => {
-    if (!client || !isConnected || isUnarchiving) return;
-    setIsUnarchiving(true);
+  const handleResume = useCallback(async () => {
+    if (!client || !isConnected || isResuming) return;
+    setIsResuming(true);
     try {
-      await client.refreshAgent(agentId);
+      await resumeAgentSession(agentId);
     } catch (error) {
-      console.error("[ArchivedAgentCallout] Failed to unarchive agent:", error);
-      setIsUnarchiving(false);
+      console.error("[ArchivedAgentCallout] Failed to resume agent:", error);
+      setIsResuming(false);
     }
-  }, [client, isConnected, isUnarchiving, agentId]);
+  }, [client, isConnected, isResuming, agentId, resumeAgentSession]);
 
   return (
     <Animated.View style={containerStyle}>
       <View style={styles.inputAreaContainer}>
         <View style={styles.inputAreaContent}>
           <View style={styles.callout}>
-            <Text style={styles.calloutText}>This agent is archived</Text>
+            <Text style={styles.calloutText}>This session is archived</Text>
             <Button
               size="sm"
               variant="secondary"
-              onPress={handleUnarchive}
-              disabled={!isConnected || isUnarchiving}
+              onPress={handleResume}
+              disabled={!isConnected || isResuming}
             >
-              Unarchive
+              {isResuming ? "Resuming..." : "Resume"}
             </Button>
           </View>
         </View>
