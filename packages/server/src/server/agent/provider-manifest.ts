@@ -41,7 +41,7 @@ const CLAUDE_MODES: AgentProviderModeDefinition[] = [
   },
   {
     id: "auto",
-    label: "Auto Review",
+    label: "Auto mode",
     description: "Uses a model classifier to review permission prompts automatically",
     icon: "ShieldQuestionMark",
     colorTier: "moderate",

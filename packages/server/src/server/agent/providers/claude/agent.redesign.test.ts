@@ -173,7 +173,7 @@ afterEach(() => {
   sdkQueryFactory.mockReset();
 });
 
-test("exposes and applies auto review permission mode", async () => {
+test("exposes and applies auto permission mode", async () => {
   const queryMock = createBaseQueryMock(vi.fn(async () => ({ done: true, value: undefined })));
   sdkQueryFactory.mockImplementation(() => queryMock);
 
@@ -184,7 +184,7 @@ test("exposes and applies auto review permission mode", async () => {
       expect.arrayContaining([
         {
           id: "auto",
-          label: "Auto Review",
+          label: "Auto mode",
           description: "Uses a model classifier to review permission prompts automatically",
         },
       ]),
@@ -199,7 +199,7 @@ test("exposes and applies auto review permission mode", async () => {
   }
 });
 
-test("rejects auto review when Claude Code uses Bedrock", async () => {
+test("rejects auto mode when Claude Code uses Bedrock", async () => {
   const previousBedrock = process.env.CLAUDE_CODE_USE_BEDROCK;
   process.env.CLAUDE_CODE_USE_BEDROCK = "1";
 
@@ -207,7 +207,7 @@ test("rejects auto review when Claude Code uses Bedrock", async () => {
 
   try {
     await expect(session.setMode("auto")).rejects.toThrow(
-      "Claude Auto Review mode requires the Anthropic API and is not supported when Claude Code uses Bedrock",
+      "Claude Auto mode requires the Anthropic API and is not supported when Claude Code uses Bedrock",
     );
     expect(sdkQueryFactory).not.toHaveBeenCalled();
   } finally {
@@ -216,7 +216,7 @@ test("rejects auto review when Claude Code uses Bedrock", async () => {
   }
 });
 
-test("allows launch env to disable inherited Bedrock transport for auto review", async () => {
+test("allows launch env to disable inherited Bedrock transport for auto mode", async () => {
   const previousBedrock = process.env.CLAUDE_CODE_USE_BEDROCK;
   process.env.CLAUDE_CODE_USE_BEDROCK = "1";
   const queryMock = createBaseQueryMock(vi.fn(async () => ({ done: true, value: undefined })));
@@ -245,7 +245,7 @@ test("allows launch env to disable inherited Bedrock transport for auto review",
   }
 });
 
-test("fails an auto review turn when Claude Code uses Vertex", async () => {
+test("fails an auto mode turn when Claude Code uses Vertex", async () => {
   const previousVertex = process.env.CLAUDE_CODE_USE_VERTEX;
   process.env.CLAUDE_CODE_USE_VERTEX = "true";
   sdkQueryFactory.mockImplementation(() => {
@@ -270,7 +270,7 @@ test("fails an auto review turn when Claude Code uses Vertex", async () => {
     );
 
     expect(failure?.error).toContain(
-      "Claude Auto Review mode requires the Anthropic API and is not supported when Claude Code uses Vertex",
+      "Claude Auto mode requires the Anthropic API and is not supported when Claude Code uses Vertex",
     );
     expect(sdkQueryFactory).not.toHaveBeenCalled();
   } finally {

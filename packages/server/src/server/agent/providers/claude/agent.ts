@@ -198,7 +198,7 @@ const DEFAULT_MODES: AgentMode[] = [
   },
   {
     id: "auto",
-    label: "Auto Review",
+    label: "Auto mode",
     description: "Uses a model classifier to review permission prompts automatically",
   },
   {
@@ -696,7 +696,7 @@ function assertClaudeAutoModeEligible(mode: PermissionMode, env: NodeJS.ProcessE
     return;
   }
   throw new Error(
-    `Claude Auto Review mode requires the Anthropic API and is not supported when Claude Code uses ${transport}. Select another permission mode or unset the ${transport === "Bedrock" ? "CLAUDE_CODE_USE_BEDROCK" : "CLAUDE_CODE_USE_VERTEX"} environment variable.`,
+    `Claude Auto mode requires the Anthropic API and is not supported when Claude Code uses ${transport}. Select another permission mode or unset the ${transport === "Bedrock" ? "CLAUDE_CODE_USE_BEDROCK" : "CLAUDE_CODE_USE_VERTEX"} environment variable.`,
   );
 }
 
