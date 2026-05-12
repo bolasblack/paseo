@@ -23,6 +23,7 @@ import { addWaitOptions, runWaitCommand } from "./commands/agent/wait.js";
 import { addArchiveOptions, runArchiveCommand } from "./commands/agent/archive.js";
 import { addAttachOptions, runAttachCommand } from "./commands/agent/attach.js";
 import { addImportOptions, runImportCommand } from "./commands/agent/import.js";
+import { addResumeOptions, runResumeCommand } from "./commands/agent/resume.js";
 import { withOutput } from "./output/index.js";
 import { onboardCommand } from "./commands/onboard.js";
 import {
@@ -63,6 +64,10 @@ export function createCli(): Command {
 
   addJsonAndDaemonHostOptions(addImportOptions(program.command("import"))).action(
     withOutput(runImportCommand),
+  );
+
+  addJsonAndDaemonHostOptions(addResumeOptions(program.command("resume"))).action(
+    withOutput(runResumeCommand),
   );
 
   addDaemonHostOption(addAttachOptions(program.command("attach"))).action(runAttachCommand);

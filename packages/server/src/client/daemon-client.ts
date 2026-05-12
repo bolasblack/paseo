@@ -4,6 +4,7 @@ import {
   AgentCreateFailedStatusPayloadSchema,
   AgentCreatedStatusPayloadSchema,
   AgentRefreshedStatusPayloadSchema,
+  AgentResumeFailedStatusPayloadSchema,
   AgentResumedStatusPayloadSchema,
   parseServerInfoStatusPayload,
   RestartRequestedStatusPayloadSchema,
@@ -1942,9 +1943,53 @@ export class DaemonClient {
         if (resumed.success && resumed.data.requestId === requestId) {
           return resumed.data;
         }
+        const failed = AgentResumeFailedStatusPayloadSchema.safeParse(msg.payload);
+        if (failed.success && failed.data.requestId === requestId) {
+          return failed.data;
+        }
         return null;
       },
     });
+
+    if (status.status === "agent_resume_failed") {
+      throw new Error(status.error);
+    }
+
+    return status.agent;
+  }
+
+  async resumeAgentSession(agentId: string, requestId?: string): Promise<AgentSnapshotPayload> {
+    const resolvedRequestId = this.createRequestId(requestId);
+    const message = SessionInboundMessageSchema.parse({
+      type: "resume_agent_session_request",
+      agentId,
+      requestId: resolvedRequestId,
+    });
+
+    const status = await this.sendRequest({
+      requestId: resolvedRequestId,
+      message,
+      timeout: 15000,
+      options: { skipQueue: true },
+      select: (msg) => {
+        if (msg.type !== "status") {
+          return null;
+        }
+        const resumed = AgentResumedStatusPayloadSchema.safeParse(msg.payload);
+        if (resumed.success && resumed.data.requestId === resolvedRequestId) {
+          return resumed.data;
+        }
+        const failed = AgentResumeFailedStatusPayloadSchema.safeParse(msg.payload);
+        if (failed.success && failed.data.requestId === resolvedRequestId) {
+          return failed.data;
+        }
+        return null;
+      },
+    });
+
+    if (status.status === "agent_resume_failed") {
+      throw new Error(status.error);
+    }
 
     return status.agent;
   }

@@ -14,6 +14,7 @@ function makeClient() {
   return {
     fetchAgentTimeline: vi.fn().mockResolvedValue(undefined),
     refreshAgent: vi.fn().mockResolvedValue(undefined),
+    resumeAgentSession: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -111,6 +112,24 @@ describe("useAgentInitialization", () => {
     });
 
     expect(client.refreshAgent).toHaveBeenCalledWith(agentId);
+    expect(client.fetchAgentTimeline).toHaveBeenCalledWith(agentId, {
+      direction: "tail",
+      limit: TIMELINE_FETCH_PAGE_SIZE,
+      projection: "canonical",
+    });
+  });
+
+  it("resume fetches a bounded canonical tail after resuming the agent session", async () => {
+    const client = makeClient();
+    const { result } = renderHook(() =>
+      useAgentInitialization({ serverId, client: client as never }),
+    );
+
+    await act(async () => {
+      await result.current.resumeAgentSession(agentId);
+    });
+
+    expect(client.resumeAgentSession).toHaveBeenCalledWith(agentId);
     expect(client.fetchAgentTimeline).toHaveBeenCalledWith(agentId, {
       direction: "tail",
       limit: TIMELINE_FETCH_PAGE_SIZE,

@@ -1791,6 +1791,8 @@ export class Session {
         return this.handleCreateAgentRequest(msg);
       case "resume_agent_request":
         return this.handleResumeAgentRequest(msg);
+      case "resume_agent_session_request":
+        return this.handleResumeAgentSessionRequest(msg);
       case "import_agent_request":
         return this.handleImportAgentRequest(msg);
       case "refresh_agent_request":
@@ -3112,16 +3114,105 @@ export class Session {
       }
     } catch (error) {
       this.sessionLogger.error({ err: error }, "Failed to resume agent");
+      const message = getErrorMessage(error);
+      if (requestId) {
+        this.emit({
+          type: "status",
+          payload: {
+            status: "agent_resume_failed",
+            requestId,
+            error: message,
+          },
+        });
+      }
       this.emit({
         type: "activity_log",
         payload: {
           id: uuidv4(),
           timestamp: new Date(),
           type: "error",
-          content: `Failed to resume agent: ${getErrorMessage(error)}`,
+          content: `Failed to resume agent: ${message}`,
         },
       });
     }
+  }
+
+  private async handleResumeAgentSessionRequest(
+    msg: Extract<SessionInboundMessage, { type: "resume_agent_session_request" }>,
+  ): Promise<void> {
+    const { agentId, requestId } = msg;
+    this.sessionLogger.info({ agentId }, `Resuming agent session ${agentId}`);
+
+    try {
+      const snapshot = await this.resumeAgentSessionById(agentId);
+      await this.agentManager.hydrateTimelineFromProvider(snapshot.id);
+      await this.forwardAgentUpdate(snapshot);
+      const timelineSize = this.agentManager.getTimeline(snapshot.id).length;
+      const agentPayload = await this.buildAgentPayload(snapshot);
+      this.emit({
+        type: "status",
+        payload: {
+          status: "agent_resumed",
+          agentId: snapshot.id,
+          requestId,
+          timelineSize,
+          agent: agentPayload,
+        },
+      });
+    } catch (error) {
+      const message = getErrorMessage(error);
+      this.sessionLogger.error(
+        { err: error, agentId },
+        `Failed to resume agent session ${agentId}`,
+      );
+      this.emit({
+        type: "status",
+        payload: {
+          status: "agent_resume_failed",
+          agentId,
+          requestId,
+          error: message,
+        },
+      });
+      this.emit({
+        type: "activity_log",
+        payload: {
+          id: uuidv4(),
+          timestamp: new Date(),
+          type: "error",
+          content: `Failed to resume agent: ${message}`,
+        },
+      });
+    }
+  }
+
+  private async resumeAgentSessionById(agentId: string): Promise<ManagedAgent> {
+    const existing = this.agentManager.getAgent(agentId);
+    await unarchiveAgentState(this.agentStorage, this.agentManager, agentId);
+    if (existing) {
+      return this.agentManager.getAgent(agentId) ?? existing;
+    }
+
+    const record = await this.agentStorage.get(agentId);
+    if (!record) {
+      throw new Error(`Agent not found: ${agentId}`);
+    }
+
+    const providerRegistry = this.getProviderRegistry();
+    if (!isStoredAgentProviderAvailable(record, Object.keys(providerRegistry))) {
+      throw new Error(`Agent ${agentId} references unavailable provider '${record.provider}'`);
+    }
+    const handle = toAgentPersistenceHandle(providerRegistry, record.persistence);
+    if (!handle) {
+      throw new Error(`Agent ${agentId} cannot be resumed because it lacks persistence`);
+    }
+
+    return await this.agentManager.resumeAgentFromPersistence(
+      handle,
+      buildConfigOverrides(record),
+      agentId,
+      extractTimestamps(record),
+    );
   }
 
   private async handleImportAgentRequest(

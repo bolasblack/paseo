@@ -59,6 +59,7 @@ import { WorkspaceGitActions } from "@/git/workspace-actions";
 import { WorkspaceOpenInEditorButton } from "@/screens/workspace/workspace-open-in-editor-button";
 import { WorkspaceScriptsButton } from "@/screens/workspace/workspace-scripts-button";
 import { WorkspaceImportSheet } from "@/screens/workspace/workspace-import-sheet";
+import { WorkspaceResumeSheet } from "@/screens/workspace/workspace-resume-sheet";
 import { ExplorerSidebarAnimationProvider } from "@/contexts/explorer-sidebar-animation-context";
 import { useToast } from "@/contexts/toast-context";
 import { useExplorerOpenGesture } from "@/hooks/use-explorer-open-gesture";
@@ -783,7 +784,7 @@ interface WorkspaceHeaderMenuProps {
   showCreateBrowserTab: boolean;
   isMobile: boolean;
   createTerminalDisabled: boolean;
-  importAgentDisabled: boolean;
+  resumeSessionDisabled: boolean;
   menuNewAgentIcon: ReactElement;
   menuNewTerminalIcon: ReactElement;
   menuNewBrowserIcon: ReactElement;
@@ -793,7 +794,7 @@ interface WorkspaceHeaderMenuProps {
   onCreateDraftTab: () => void;
   onCreateTerminal: () => void;
   onCreateBrowser: () => void;
-  onOpenImportSheet: () => void;
+  onOpenResumeSheet: () => void;
   onCopyWorkspacePath: () => void;
   onCopyBranchName: () => void;
   onOpenSetupTab: () => void;
@@ -820,7 +821,7 @@ function WorkspaceHeaderMenu({
   showCreateBrowserTab,
   isMobile,
   createTerminalDisabled,
-  importAgentDisabled,
+  resumeSessionDisabled,
   menuNewAgentIcon,
   menuNewTerminalIcon,
   menuNewBrowserIcon,
@@ -830,7 +831,7 @@ function WorkspaceHeaderMenu({
   onCreateDraftTab,
   onCreateTerminal,
   onCreateBrowser,
-  onOpenImportSheet,
+  onOpenResumeSheet,
   onCopyWorkspacePath,
   onCopyBranchName,
   onOpenSetupTab,
@@ -880,10 +881,10 @@ function WorkspaceHeaderMenu({
         <DropdownMenuItem
           testID="workspace-header-import-agent"
           leading={menuImportIcon}
-          disabled={importAgentDisabled}
-          onSelect={onOpenImportSheet}
+          disabled={resumeSessionDisabled}
+          onSelect={onOpenResumeSheet}
         >
-          Import session
+          Resume session
         </DropdownMenuItem>
         <DropdownMenuItem
           testID="workspace-header-copy-path"
@@ -932,7 +933,7 @@ interface WorkspaceHeaderTitleBarProps {
   showCreateBrowserTab: boolean;
   isMobile: boolean;
   createTerminalDisabled: boolean;
-  importAgentDisabled: boolean;
+  resumeSessionDisabled: boolean;
   menuNewAgentIcon: ReactElement;
   menuNewTerminalIcon: ReactElement;
   menuNewBrowserIcon: ReactElement;
@@ -942,7 +943,7 @@ interface WorkspaceHeaderTitleBarProps {
   onCreateDraftTab: () => void;
   onCreateTerminal: () => void;
   onCreateBrowser: () => void;
-  onOpenImportSheet: () => void;
+  onOpenResumeSheet: () => void;
   onCopyWorkspacePath: () => void;
   onCopyBranchName: () => void;
   onOpenSetupTab: () => void;
@@ -961,7 +962,7 @@ function WorkspaceHeaderTitleBar({
   showCreateBrowserTab,
   isMobile,
   createTerminalDisabled,
-  importAgentDisabled,
+  resumeSessionDisabled,
   menuNewAgentIcon,
   menuNewTerminalIcon,
   menuNewBrowserIcon,
@@ -971,7 +972,7 @@ function WorkspaceHeaderTitleBar({
   onCreateDraftTab,
   onCreateTerminal,
   onCreateBrowser,
-  onOpenImportSheet,
+  onOpenResumeSheet,
   onCopyWorkspacePath,
   onCopyBranchName,
   onOpenSetupTab,
@@ -1009,7 +1010,7 @@ function WorkspaceHeaderTitleBar({
         showCreateBrowserTab={showCreateBrowserTab}
         isMobile={isMobile}
         createTerminalDisabled={createTerminalDisabled}
-        importAgentDisabled={importAgentDisabled}
+        resumeSessionDisabled={resumeSessionDisabled}
         menuNewAgentIcon={menuNewAgentIcon}
         menuNewTerminalIcon={menuNewTerminalIcon}
         menuNewBrowserIcon={menuNewBrowserIcon}
@@ -1019,7 +1020,7 @@ function WorkspaceHeaderTitleBar({
         onCreateDraftTab={onCreateDraftTab}
         onCreateTerminal={onCreateTerminal}
         onCreateBrowser={onCreateBrowser}
-        onOpenImportSheet={onOpenImportSheet}
+        onOpenResumeSheet={onOpenResumeSheet}
         onCopyWorkspacePath={onCopyWorkspacePath}
         onCopyBranchName={onCopyBranchName}
         onOpenSetupTab={onOpenSetupTab}
@@ -1473,12 +1474,19 @@ function WorkspaceScreenContent({
   const { workspaceDirectory, isMissingWorkspaceExecutionAuthority } =
     resolveWorkspaceAuthorityState(workspaceAuthority, workspaceDescriptor);
   const [isImportSheetVisible, setIsImportSheetVisible] = useState(false);
+  const [isResumeSheetVisible, setIsResumeSheetVisible] = useState(false);
   const canOpenImportSheet = [client, isConnected, workspaceDirectory].every(Boolean);
   const openImportSheet = useCallback(() => {
     setIsImportSheetVisible(true);
   }, []);
   const closeImportSheet = useCallback(() => {
     setIsImportSheetVisible(false);
+  }, []);
+  const openResumeSheet = useCallback(() => {
+    setIsResumeSheetVisible(true);
+  }, []);
+  const closeResumeSheet = useCallback(() => {
+    setIsResumeSheetVisible(false);
   }, []);
 
   // Warm the global provider snapshot so the model picker is ready when opened.
@@ -1678,6 +1686,15 @@ function WorkspaceScreenContent({
     () => (workspaceLayout ? collectAllTabs(workspaceLayout.root) : EMPTY_UI_TABS),
     [workspaceLayout],
   );
+  const openAgentIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const tab of uiTabs) {
+      if (tab.target.kind === "agent") {
+        ids.add(tab.target.agentId);
+      }
+    }
+    return ids;
+  }, [uiTabs]);
   useSyncWorkspaceActiveBrowser({ workspaceLayout, isRouteFocused });
   const openWorkspaceTabInBackground = useWorkspaceLayoutStore(
     (state) => state.openTabInBackground,
@@ -1855,7 +1872,7 @@ function WorkspaceScreenContent({
     },
     [focusWorkspaceTab, persistenceKey],
   );
-  const handleImportedAgent = useCallback(
+  const openAgentTab = useCallback(
     (agentId: string) => {
       if (!persistenceKey) {
         return;
@@ -3140,7 +3157,7 @@ function WorkspaceScreenContent({
                         showCreateBrowserTab={showCreateBrowserTab}
                         isMobile={isMobile}
                         createTerminalDisabled={createTerminalDisabled}
-                        importAgentDisabled={!canOpenImportSheet}
+                        resumeSessionDisabled={!canOpenImportSheet}
                         menuNewAgentIcon={menuNewAgentIcon}
                         menuNewTerminalIcon={menuNewTerminalIcon}
                         menuNewBrowserIcon={MENU_NEW_BROWSER_ICON}
@@ -3150,7 +3167,7 @@ function WorkspaceScreenContent({
                         onCreateDraftTab={handleCreateDraftTab}
                         onCreateTerminal={handleCreateTerminal}
                         onCreateBrowser={handleCreateBrowserTab}
-                        onOpenImportSheet={openImportSheet}
+                        onOpenResumeSheet={openResumeSheet}
                         onCopyWorkspacePath={handleCopyWorkspacePath}
                         onCopyBranchName={handleCopyBranchName}
                         onOpenSetupTab={handleOpenSetupTab}
@@ -3238,7 +3255,16 @@ function WorkspaceScreenContent({
             serverId={normalizedServerId}
             workspaceDirectory={workspaceDirectory}
             onClose={closeImportSheet}
-            onImportedAgent={handleImportedAgent}
+            onImportedAgent={openAgentTab}
+          />
+          <WorkspaceResumeSheet
+            visible={isResumeSheetVisible}
+            client={client}
+            serverId={normalizedServerId}
+            workspaceDirectory={workspaceDirectory}
+            openAgentIds={openAgentIds}
+            onClose={closeResumeSheet}
+            onResumedAgent={openAgentTab}
           />
         </View>
       </WorkspaceFocusProvider>

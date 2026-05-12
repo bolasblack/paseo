@@ -12,12 +12,15 @@ import { TIMELINE_FETCH_PAGE_SIZE } from "@/timeline/timeline-fetch-policy";
 
 const INIT_TIMEOUT_MS = 30_000;
 
+type AgentInitializationClient = Pick<DaemonClient, "fetchAgentTimeline" | "resumeAgentSession"> &
+  Partial<Pick<DaemonClient, "refreshAgent">>;
+
 export function useAgentInitialization({
   serverId,
   client,
 }: {
   serverId: string;
-  client: DaemonClient | null;
+  client: AgentInitializationClient | null;
 }) {
   const setInitializingAgents = useSessionStore((state) => state.setInitializingAgents);
   const setAgentInitializing = useCallback(
@@ -88,15 +91,15 @@ export function useAgentInitialization({
     [client, serverId, setAgentInitializing],
   );
 
-  const refreshAgent = useCallback(
-    async (agentId: string) => {
+  const loadAgentTailAfter = useCallback(
+    async (agentId: string, action: (agentId: string) => Promise<unknown>) => {
       if (!client) {
         throw new Error("Host is not connected");
       }
       setAgentInitializing(agentId, true);
 
       try {
-        await client.refreshAgent(agentId);
+        await action(agentId);
         await client.fetchAgentTimeline(agentId, {
           direction: "tail",
           limit: TIMELINE_FETCH_PAGE_SIZE,
@@ -110,5 +113,28 @@ export function useAgentInitialization({
     [client, setAgentInitializing],
   );
 
-  return { ensureAgentIsInitialized, refreshAgent };
+  const refreshAgent = useCallback(
+    async (agentId: string) => {
+      if (!client?.refreshAgent) {
+        throw new Error("Host is not connected");
+      }
+      const refresh = client.refreshAgent;
+      await loadAgentTailAfter(agentId, (targetAgentId) => refresh(targetAgentId));
+    },
+    [client, loadAgentTailAfter],
+  );
+
+  const resumeAgentSession = useCallback(
+    async (agentId: string) => {
+      if (!client) {
+        throw new Error("Host is not connected");
+      }
+      await loadAgentTailAfter(agentId, (targetAgentId) =>
+        client.resumeAgentSession(targetAgentId),
+      );
+    },
+    [client, loadAgentTailAfter],
+  );
+
+  return { ensureAgentIsInitialized, refreshAgent, resumeAgentSession };
 }
