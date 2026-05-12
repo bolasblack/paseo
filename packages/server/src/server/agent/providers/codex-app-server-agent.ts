@@ -162,11 +162,6 @@ const CODEX_MODES: AgentMode[] = [
     description: "Edit files and run commands with Codex's default approval flow.",
   },
   {
-    id: "auto-review",
-    label: "Auto Review",
-    description: "Runs trusted operations automatically and asks before untrusted ones.",
-  },
-  {
     id: "full-access",
     label: "Full Access",
     description: "Edit files, run commands, and access the network without additional prompts.",
@@ -205,10 +200,6 @@ const MODE_PRESETS: Record<
     sandbox: "read-only",
   },
   auto: {
-    approvalPolicy: "on-request",
-    sandbox: "workspace-write",
-  },
-  "auto-review": {
     approvalPolicy: "on-request",
     sandbox: "workspace-write",
   },

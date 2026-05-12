@@ -79,13 +79,6 @@ const CODEX_MODES: AgentProviderModeDefinition[] = [
     colorTier: "moderate",
   },
   {
-    id: "auto-review",
-    label: "Auto Review",
-    description: "Runs trusted operations automatically and asks before untrusted ones.",
-    icon: "ShieldQuestionMark",
-    colorTier: "moderate",
-  },
-  {
     id: "full-access",
     label: "Full Access",
     description: "Edit files, run commands, and access the network without additional prompts.",

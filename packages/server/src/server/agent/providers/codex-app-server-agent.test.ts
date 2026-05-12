@@ -198,49 +198,6 @@ function capturedThreadStartConfig(records: CapturedFakeCodexRecord[]): unknown 
 }
 
 describe("Codex app-server provider", () => {
-  test("exposes and applies auto review approval policy that matches Codex auto mode", async () => {
-    const session = createSession({ modeId: "auto-review", thinkingOptionId: "medium" });
-    const requests: Array<{ method: string; params: unknown }> = [];
-    const fakeClient: CodexClientLike = {
-      async request(method: string, params?: unknown) {
-        requests.push({ method, params });
-        if (method === "thread/start") {
-          return { thread: { id: "auto-review-thread" } };
-        }
-        if (method === "turn/start") {
-          return {};
-        }
-        return null;
-      },
-    };
-    session.client = fakeClient;
-    session.currentThreadId = null;
-    session.activeForegroundTurnId = null;
-
-    await expect(session.getAvailableModes()).resolves.toEqual(
-      expect.arrayContaining([
-        {
-          id: "auto-review",
-          label: "Auto Review",
-          description: "Runs trusted operations automatically and asks before untrusted ones.",
-        },
-      ]),
-    );
-
-    await session.startTurn("Review this change");
-
-    const threadStartCall = requests.find((req) => req.method === "thread/start");
-    const turnStartCall = requests.find((req) => req.method === "turn/start");
-    expect(threadStartCall?.params).toMatchObject({
-      approvalPolicy: "on-request",
-      sandbox: "workspace-write",
-    });
-    expect(turnStartCall?.params).toMatchObject({
-      approvalPolicy: "on-request",
-      sandboxPolicy: { type: "workspaceWrite", networkAccess: false },
-    });
-  });
-
   test("passes ephemeral: true to thread/start when constructed as ephemeral", async () => {
     const requests: Array<{ method: string; params: unknown }> = [];
     const fakeClient: CodexClientLike = {
