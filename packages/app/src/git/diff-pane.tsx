@@ -825,11 +825,23 @@ const DiffFileHeader = memo(function DiffFileHeader({
   const layoutYRef = useRef<number | null>(null);
   const pressHandledRef = useRef(false);
   const pressInRef = useRef<{ ts: number; pageX: number; pageY: number } | null>(null);
+  const pressFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearPressFallbackTimer = useCallback(() => {
+    if (pressFallbackTimerRef.current === null) {
+      return;
+    }
+    clearTimeout(pressFallbackTimerRef.current);
+    pressFallbackTimerRef.current = null;
+  }, []);
+
+  useEffect(() => clearPressFallbackTimer, [clearPressFallbackTimer]);
 
   const toggleExpanded = useCallback(() => {
+    clearPressFallbackTimer();
     pressHandledRef.current = true;
     onToggle(file.path);
-  }, [file.path, onToggle]);
+  }, [clearPressFallbackTimer, file.path, onToggle]);
 
   const handleLayout = useCallback(
     (event: LayoutChangeEvent) => {
@@ -839,14 +851,18 @@ const DiffFileHeader = memo(function DiffFileHeader({
     [file.path, onHeaderHeightChange],
   );
 
-  const handlePressIn = useCallback((event: { nativeEvent: { pageX: number; pageY: number } }) => {
-    pressHandledRef.current = false;
-    pressInRef.current = {
-      ts: Date.now(),
-      pageX: event.nativeEvent.pageX,
-      pageY: event.nativeEvent.pageY,
-    };
-  }, []);
+  const handlePressIn = useCallback(
+    (event: { nativeEvent: { pageX: number; pageY: number } }) => {
+      clearPressFallbackTimer();
+      pressHandledRef.current = false;
+      pressInRef.current = {
+        ts: Date.now(),
+        pageX: event.nativeEvent.pageX,
+        pageY: event.nativeEvent.pageY,
+      };
+    },
+    [clearPressFallbackTimer],
+  );
 
   const handlePressOut = useCallback(
     (event: { nativeEvent: { pageX: number; pageY: number } }) => {
@@ -856,11 +872,18 @@ const DiffFileHeader = memo(function DiffFileHeader({
         const dy = event.nativeEvent.pageY - pressInRef.current.pageY;
         const distance = Math.hypot(dx, dy);
         if (durationMs <= 500 && distance <= 12) {
-          toggleExpanded();
+          clearPressFallbackTimer();
+          // Native onPress fires after onPressOut; defer fallback to avoid double-toggling.
+          pressFallbackTimerRef.current = setTimeout(() => {
+            pressFallbackTimerRef.current = null;
+            if (!pressHandledRef.current) {
+              toggleExpanded();
+            }
+          }, 0);
         }
       }
     },
-    [toggleExpanded],
+    [clearPressFallbackTimer, toggleExpanded],
   );
 
   const containerStyle = useMemo(
