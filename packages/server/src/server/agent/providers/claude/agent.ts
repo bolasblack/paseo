@@ -42,34 +42,35 @@ import { appendOrReplaceGrowingAssistantMessage, runProviderTurn } from "../prov
 import { renderPromptAttachmentAsText } from "../../prompt-attachments.js";
 import { claudeQuery, type ClaudeOptions, type ClaudeQueryFactory } from "./query.js";
 
-import type {
-  AgentPermissionAction,
-  AgentCapabilityFlags,
-  AgentClient,
-  AgentCreateSessionOptions,
-  AgentLaunchContext,
-  AgentMetadata,
-  AgentMode,
-  AgentModelDefinition,
-  AgentPermissionRequest,
-  AgentPermissionRequestKind,
-  AgentPermissionResponse,
-  AgentPermissionUpdate,
-  AgentPersistenceHandle,
-  AgentPromptInput,
-  AgentRunOptions,
-  AgentRunResult,
-  AgentSession,
-  AgentSessionConfig,
-  AgentSlashCommand,
-  AgentStreamEvent,
-  AgentTimelineItem,
-  AgentUsage,
-  AgentRuntimeInfo,
-  ListModelsOptions,
-  ListPersistedAgentsOptions,
-  McpServerConfig,
-  PersistedAgentDescriptor,
+import {
+  getAgentStreamEventTurnId,
+  type AgentPermissionAction,
+  type AgentCapabilityFlags,
+  type AgentClient,
+  type AgentCreateSessionOptions,
+  type AgentLaunchContext,
+  type AgentMetadata,
+  type AgentMode,
+  type AgentModelDefinition,
+  type AgentPermissionRequest,
+  type AgentPermissionRequestKind,
+  type AgentPermissionResponse,
+  type AgentPermissionUpdate,
+  type AgentPersistenceHandle,
+  type AgentPromptInput,
+  type AgentRunOptions,
+  type AgentRunResult,
+  type AgentSession,
+  type AgentSessionConfig,
+  type AgentSlashCommand,
+  type AgentStreamEvent,
+  type AgentTimelineItem,
+  type AgentUsage,
+  type AgentRuntimeInfo,
+  type ListModelsOptions,
+  type ListPersistedAgentsOptions,
+  type McpServerConfig,
+  type PersistedAgentDescriptor,
 } from "../../agent-sdk-types.js";
 import {
   createProviderEnv,
@@ -196,6 +197,11 @@ const DEFAULT_MODES: AgentMode[] = [
     description: "Prompts for permission the first time a tool is used",
   },
   {
+    id: "auto",
+    label: "Auto Review",
+    description: "Uses a model classifier to review permission prompts automatically",
+  },
+  {
     id: "acceptEdits",
     label: "Accept File Edits",
     description: "Automatically approves edit-focused tools without prompting",
@@ -250,6 +256,7 @@ interface ClaudeAgentSessionOptions {
   defaults?: { agents?: Record<string, AgentDefinition> };
   runtimeSettings?: ProviderRuntimeSettings;
   handle?: AgentPersistenceHandle;
+  agentId?: string;
   launchEnv?: Record<string, string>;
   persistSession?: boolean;
   logger: Logger;
@@ -656,6 +663,41 @@ function isMcpServersRecord(value: unknown): value is Record<string, McpServerCo
 
 function isPermissionMode(value: string | undefined): value is PermissionMode {
   return typeof value === "string" && VALID_CLAUDE_MODES.has(value);
+}
+
+function isTruthyEnvValue(value: string | undefined): boolean {
+  const normalized = value?.trim().toLowerCase();
+  return (
+    normalized !== undefined &&
+    normalized.length > 0 &&
+    normalized !== "0" &&
+    normalized !== "false" &&
+    normalized !== "no" &&
+    normalized !== "off"
+  );
+}
+
+function detectIneligibleAutoModeTransport(env: NodeJS.ProcessEnv): "Bedrock" | "Vertex" | null {
+  if (isTruthyEnvValue(env.CLAUDE_CODE_USE_BEDROCK)) {
+    return "Bedrock";
+  }
+  if (isTruthyEnvValue(env.CLAUDE_CODE_USE_VERTEX)) {
+    return "Vertex";
+  }
+  return null;
+}
+
+function assertClaudeAutoModeEligible(mode: PermissionMode, env: NodeJS.ProcessEnv): void {
+  if (mode !== "auto") {
+    return;
+  }
+  const transport = detectIneligibleAutoModeTransport(env);
+  if (transport === null) {
+    return;
+  }
+  throw new Error(
+    `Claude Auto Review mode requires the Anthropic API and is not supported when Claude Code uses ${transport}. Select another permission mode or unset the ${transport === "Bedrock" ? "CLAUDE_CODE_USE_BEDROCK" : "CLAUDE_CODE_USE_VERTEX"} environment variable.`,
+  );
 }
 
 function coerceSessionMetadata(metadata: AgentMetadata | undefined): Partial<AgentSessionConfig> {
@@ -1152,8 +1194,6 @@ export function readEventIdentifiers(message: SDKMessage): EventIdentifiers {
   };
 }
 
-const claudeDebug = process.env.PASEO_CLAUDE_DEBUG === "1";
-
 export class ClaudeAgentClient implements AgentClient {
   readonly provider = "claude" as const;
   readonly capabilities = CLAUDE_CAPABILITIES;
@@ -1181,6 +1221,7 @@ export class ClaudeAgentClient implements AgentClient {
     return new ClaudeAgentSession(claudeConfig, {
       defaults: this.defaults,
       runtimeSettings: this.runtimeSettings,
+      agentId: launchContext?.agentId,
       launchEnv: launchContext?.env,
       persistSession: options?.persistSession,
       logger: this.logger,
@@ -1209,6 +1250,7 @@ export class ClaudeAgentClient implements AgentClient {
       defaults: this.defaults,
       runtimeSettings: this.runtimeSettings,
       handle,
+      agentId: launchContext?.agentId,
       launchEnv: launchContext?.env,
       logger: this.logger,
       queryFactory: this.queryFactory,
@@ -1477,6 +1519,7 @@ class ClaudeAgentSession implements AgentSession {
 
   private readonly config: ClaudeAgentConfig;
   private readonly launchEnv?: Record<string, string>;
+  private readonly agentId?: string;
   private readonly defaults?: { agents?: Record<string, AgentDefinition> };
   private readonly runtimeSettings?: ProviderRuntimeSettings;
   private readonly persistSession?: boolean;
@@ -1526,10 +1569,11 @@ class ClaudeAgentSession implements AgentSession {
   constructor(config: ClaudeAgentConfig, options: ClaudeAgentSessionOptions) {
     this.config = config;
     this.launchEnv = options.launchEnv;
+    this.agentId = options.agentId;
     this.defaults = options.defaults;
     this.runtimeSettings = options.runtimeSettings;
     this.persistSession = options.persistSession;
-    this.logger = options.logger;
+    this.logger = options.logger.child({ agentId: this.agentId });
     this.queryFactory = options.queryFactory;
     this.resolveBinary = options.resolveBinary;
     const handle = options.handle;
@@ -1731,6 +1775,7 @@ class ClaudeAgentSession implements AgentSession {
     }
 
     const normalized = isPermissionMode(modeId) ? modeId : "default";
+    assertClaudeAutoModeEligible(normalized, this.buildSdkEnv(this.config.extra?.claude));
     const previousMode = this.currentMode;
     const activeQuery = await this.ensureQuery();
     await activeQuery.setPermissionMode(normalized);
@@ -1869,13 +1914,16 @@ class ClaudeAgentSession implements AgentSession {
   async close(): Promise<void> {
     this.logger.trace(
       {
-        claudeSessionId: this.claudeSessionId,
+        agentId: this.agentId,
+        provider: "claude",
+        sessionId: this.claudeSessionId,
+        turnId: this.activeForegroundTurnId ?? this.autonomousTurn?.id ?? undefined,
         turnState: this.turnState,
         hasQuery: Boolean(this.query),
         hasInput: Boolean(this.input),
         hasActiveForegroundTurnId: Boolean(this.activeForegroundTurnId),
       },
-      "Claude session close: start",
+      "provider.claude.session_close.start",
     );
     this.closed = true;
     this.rejectAllPendingPermissions(new Error("Claude session closed"));
@@ -1910,8 +1958,13 @@ class ClaudeAgentSession implements AgentSession {
       }
     }
     this.logger.trace(
-      { claudeSessionId: this.claudeSessionId, turnState: this.turnState },
-      "Claude session close: completed",
+      {
+        agentId: this.agentId,
+        provider: "claude",
+        sessionId: this.claudeSessionId,
+        turnState: this.turnState,
+      },
+      "provider.claude.session_close.complete",
     );
   }
 
@@ -2188,16 +2241,41 @@ class ClaudeAgentSession implements AgentSession {
     label: string,
   ): Promise<void> {
     if (!promise) {
-      this.logger.trace({ label }, "Claude query operation skipped (no promise)");
+      this.logger.trace(
+        {
+          agentId: this.agentId,
+          provider: "claude",
+          sessionId: this.claudeSessionId,
+          turnId: this.activeForegroundTurnId ?? this.autonomousTurn?.id ?? undefined,
+          label,
+        },
+        "provider.claude.query_operation.skip",
+      );
       return;
     }
     const startedAt = Date.now();
-    this.logger.trace({ label }, "Claude query operation wait start");
+    this.logger.trace(
+      {
+        agentId: this.agentId,
+        provider: "claude",
+        sessionId: this.claudeSessionId,
+        turnId: this.activeForegroundTurnId ?? this.autonomousTurn?.id ?? undefined,
+        label,
+      },
+      "provider.claude.query_operation.start",
+    );
     try {
       await withTimeout(promise, 3_000, "timeout");
       this.logger.trace(
-        { label, durationMs: Date.now() - startedAt },
-        "Claude query operation settled",
+        {
+          agentId: this.agentId,
+          provider: "claude",
+          sessionId: this.claudeSessionId,
+          turnId: this.activeForegroundTurnId ?? this.autonomousTurn?.id ?? undefined,
+          label,
+          durationMs: Date.now() - startedAt,
+        },
+        "provider.claude.query_operation.settled",
       );
     } catch (error) {
       this.logger.warn({ err: error, label }, "Claude query operation did not settle cleanly");
@@ -2224,11 +2302,8 @@ class ClaudeAgentSession implements AgentSession {
       .join("\n\n");
   }
 
-  private async buildOptions(): Promise<ClaudeOptions> {
-    const { thinking, effort } = this.resolveThinkingConfig();
-    const appendedSystemPrompt = this.buildAppendedSystemPrompt();
-    const extraClaudeOptions = this.config.extra?.claude;
-    const sdkEnv = createProviderEnv({
+  private buildSdkEnv(extraClaudeOptions: Partial<ClaudeOptions> | undefined): NodeJS.ProcessEnv {
+    return createProviderEnv({
       baseEnv: process.env,
       runtimeSettings: this.runtimeSettings,
       overlays: [
@@ -2241,6 +2316,14 @@ class ClaudeAgentSession implements AgentSession {
         this.launchEnv,
       ],
     });
+  }
+
+  private async buildOptions(): Promise<ClaudeOptions> {
+    const { thinking, effort } = this.resolveThinkingConfig();
+    const appendedSystemPrompt = this.buildAppendedSystemPrompt();
+    const extraClaudeOptions = this.config.extra?.claude;
+    const sdkEnv = this.buildSdkEnv(extraClaudeOptions);
+    assertClaudeAutoModeEligible(this.currentMode, sdkEnv);
 
     const claudeBinary = await this.resolveBinary();
     this.logger.debug(
@@ -2593,7 +2676,16 @@ class ClaudeAgentSession implements AgentSession {
     }
 
     const pump = this.runQueryPump().catch((error) => {
-      this.logger.trace({ err: error }, "Claude query pump exited unexpectedly");
+      this.logger.trace(
+        {
+          agentId: this.agentId,
+          provider: "claude",
+          sessionId: this.claudeSessionId,
+          turnId: this.activeForegroundTurnId ?? this.autonomousTurn?.id ?? undefined,
+          err: error,
+        },
+        "provider.claude.query_pump.exit_unexpected",
+      );
     });
 
     this.queryPumpPromise = pump;
@@ -2609,24 +2701,34 @@ class ClaudeAgentSession implements AgentSession {
     try {
       activeQuery = await this.ensureQuery();
     } catch (error) {
-      this.logger.trace({ err: error }, "Failed to initialize Claude query pump");
+      this.logger.trace(
+        {
+          agentId: this.agentId,
+          provider: "claude",
+          sessionId: this.claudeSessionId,
+          turnId: this.activeForegroundTurnId ?? this.autonomousTurn?.id ?? undefined,
+          err: error,
+        },
+        "provider.claude.query_pump.init_failed",
+      );
       this.failActiveTurns(error instanceof Error ? error.message : "Claude stream failed");
       return;
     }
 
     let consecutiveInterruptAbortRecoveries = 0;
     const logRawMessage = (message: SDKMessage): void => {
-      if (!claudeDebug) {
-        return;
-      }
       this.logger.trace(
         {
-          claudeSessionId: this.claudeSessionId,
+          agentId: this.agentId,
+          provider: "claude",
+          sessionId: this.claudeSessionId,
+          turnId: this.activeForegroundTurnId ?? this.autonomousTurn?.id ?? undefined,
           messageType: message.type,
           messageSubtype: "subtype" in message ? message.subtype : undefined,
           messageUuid: "uuid" in message ? message.uuid : undefined,
+          rawEvent: message,
         },
-        "Claude query pump: raw SDK message",
+        "provider.claude.raw_event",
       );
     };
     const handlePumpedMessage = async (message: SDKMessage): Promise<boolean> => {
@@ -2739,16 +2841,18 @@ class ClaudeAgentSession implements AgentSession {
     const turnId = this.activeForegroundTurnId ?? this.autonomousTurn?.id ?? null;
     const identifiers = readEventIdentifiers(message);
 
-    if (claudeDebug) {
-      this.logger.trace(
-        {
-          claudeSessionId: this.claudeSessionId,
-          messageType: message.type,
-          turnId,
-        },
-        "Claude query pump: SDK message",
-      );
-    }
+    this.logger.trace(
+      {
+        agentId: this.agentId,
+        provider: "claude",
+        sessionId: this.claudeSessionId,
+        turnId: turnId ?? undefined,
+        messageType: message.type,
+        identifiers,
+        rawEvent: message,
+      },
+      "provider.claude.parsed_event",
+    );
 
     const messageEvents = this.translateMessageToEvents(message, {
       suppressAssistantText: true,
@@ -2816,7 +2920,6 @@ class ClaudeAgentSession implements AgentSession {
 
     this.logger.warn(
       {
-        claudeSessionId: this.claudeSessionId,
         error: staleResumeError,
       },
       "Claude resumed session no longer exists; invalidating persisted session",
@@ -2846,7 +2949,15 @@ class ClaudeAgentSession implements AgentSession {
   private async interruptActiveTurn(): Promise<void> {
     const queryToInterrupt = this.query;
     if (!queryToInterrupt || typeof queryToInterrupt.interrupt !== "function") {
-      this.logger.trace("interruptActiveTurn: no query to interrupt");
+      this.logger.trace(
+        {
+          agentId: this.agentId,
+          provider: "claude",
+          sessionId: this.claudeSessionId,
+          turnId: this.activeForegroundTurnId ?? this.autonomousTurn?.id ?? undefined,
+        },
+        "provider.claude.interrupt.no_query",
+      );
       return;
     }
     this.pendingInterruptAbort = true;
@@ -3455,6 +3566,16 @@ class ClaudeAgentSession implements AgentSession {
   private notifySubscribers(event: AgentStreamEvent): void {
     const turnId = this.activeForegroundTurnId ?? this.autonomousTurn?.id;
     const tagged = turnId ? { ...event, turnId } : event;
+    this.logger.trace(
+      {
+        agentId: this.agentId,
+        provider: "claude",
+        sessionId: this.claudeSessionId,
+        turnId: getAgentStreamEventTurnId(tagged),
+        event: tagged,
+      },
+      "provider.claude.event_emit",
+    );
     for (const callback of this.subscribers) {
       try {
         callback(tagged);
