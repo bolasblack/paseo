@@ -98,7 +98,6 @@ export function buildDraftStatusControls(input: {
     onSetFeature,
     onDropdownClose,
     onModelSelectorOpen: formState.refetchProviderModelsIfStale,
-    onModeSelectorOpen: formState.refreshProviderModels,
   };
 }
 
