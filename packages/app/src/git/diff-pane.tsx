@@ -934,6 +934,7 @@ function DiffFileBody({
   wrapLines,
   reviewActions,
   onBodyHeightChange,
+  estimatedHeight,
   testID,
 }: {
   file: ParsedDiffFile;
@@ -941,6 +942,7 @@ function DiffFileBody({
   wrapLines: boolean;
   reviewActions?: InlineReviewActions;
   onBodyHeightChange?: (file: ParsedDiffFile, height: number) => void;
+  estimatedHeight: number;
   testID?: string;
 }) {
   const [scrollViewWidth, setScrollViewWidth] = useState(0);
@@ -961,9 +963,13 @@ function DiffFileBody({
     () => [styles.linesContainer, availableWidth > 0 && { minWidth: availableWidth }],
     [availableWidth],
   );
+  const bodyContainerStyle = useMemo(
+    () => [FILE_SECTION_BODY_STYLE, { minHeight: estimatedHeight }],
+    [estimatedHeight],
+  );
 
   return (
-    <View style={FILE_SECTION_BODY_STYLE} onLayout={handleLayout} testID={testID}>
+    <View style={bodyContainerStyle} onLayout={handleLayout} testID={testID}>
       {(() => {
         if (file.status === "too_large" || file.status === "binary") {
           return (
@@ -1769,18 +1775,19 @@ export function GitDiffPane({
       if (!Number.isFinite(height) || height < 0) {
         return;
       }
+      const measuredHeight = Math.max(height, estimateBodyHeight(file));
       const heightKey = getBodyHeightKey(file);
       const previousHeight = bodyHeightByKeyRef.current[heightKey];
       if (
         previousHeight !== undefined &&
-        Math.abs(previousHeight - height) <= DIFF_HEIGHT_CHANGE_EPSILON
+        Math.abs(previousHeight - measuredHeight) <= DIFF_HEIGHT_CHANGE_EPSILON
       ) {
         return;
       }
-      bodyHeightByKeyRef.current[heightKey] = height;
+      bodyHeightByKeyRef.current[heightKey] = measuredHeight;
       setHeightVersion((version) => version + 1);
     },
-    [getBodyHeightKey],
+    [estimateBodyHeight, getBodyHeightKey],
   );
 
   const handleDiffListScroll = useCallback(
@@ -1901,12 +1908,14 @@ export function GitDiffPane({
           wrapLines={wrapLines}
           reviewActions={reviewActions}
           onBodyHeightChange={handleBodyHeightChange}
+          estimatedHeight={estimateBodyHeight(item.file)}
           testID={`diff-file-${item.fileIndex}-body`}
         />
       );
     },
     [
       effectiveLayout,
+      estimateBodyHeight,
       handleBodyHeightChange,
       handleHeaderHeightChange,
       handleToggleExpanded,
